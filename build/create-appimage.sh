@@ -33,33 +33,27 @@ if [ ! -d "$SCRIPT_DIR/Python-$PYTHON_VERSION" ]; then
     rm -f "Python-$PYTHON_VERSION.tgz"
 fi
 
-# After Python compilation and before virtual environment creation
+# After Python compilation, install packages directly to AppDir
 
-# Clean up any existing venv BEFORE setting LD_LIBRARY_PATH to avoid segfault
-rm -rf "$SCRIPT_DIR/venv"
-
-# Use the compiled Python - no need to copy or create symlinks since they're already set up
+# Use the compiled Python
 PYTHON_EXEC="$SCRIPT_DIR/AppDir/usr/bin/python${PYTHON_VERSION%.*}"
 export LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH"
 
-# Create and activate virtual environment using the compiled Python
-"$PYTHON_EXEC" -m venv --clear "$SCRIPT_DIR/venv"
-source "$SCRIPT_DIR/venv/bin/activate"
-
-# Verify we're using the correct Python version in the virtual environment
-VENV_PYTHON_VERSION=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-if [ "$VENV_PYTHON_VERSION" != "${PYTHON_VERSION%.*}" ]; then
-    echo "Error: Virtual environment Python version ($VENV_PYTHON_VERSION) doesn't match expected version ($PYTHON_VERSION)"
-    deactivate
-    rm -rf "$SCRIPT_DIR/venv"
+# Verify Python version
+PYTHON_VERSION_CHECK=$("$PYTHON_EXEC" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+if [ "$PYTHON_VERSION_CHECK" != "${PYTHON_VERSION%.*}" ]; then
+    echo "Error: Python version ($PYTHON_VERSION_CHECK) doesn't match expected version (${PYTHON_VERSION%.*})"
     exit 1
 fi
 
-# Upgrade pip first
-"$SCRIPT_DIR/venv/bin/python" -m pip install --upgrade pip
+# Create site-packages directory if it doesn't exist
+mkdir -p "$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages"
 
-# Install dependencies in virtual environment with specific versions
-"$SCRIPT_DIR/venv/bin/python" -m pip install \
+# Upgrade pip first
+"$PYTHON_EXEC" -m pip install --upgrade pip
+
+# Install dependencies directly to AppDir (avoiding venv segfault)
+"$PYTHON_EXEC" -m pip install --target="$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages" \
     opencv-python-headless==4.8.1.78 \
     mediapipe==0.10.9 \
     numpy==1.24.3 \
@@ -111,8 +105,7 @@ done
 # Copy largest icon to AppDir root for AppImage builder
 cp "$SCRIPT_DIR/AppDir/usr/share/icons/hicolor/512x512/apps/vidmask.png" "$SCRIPT_DIR/AppDir/vidmask.png"
 
-# Copy virtual environment packages to AppDir
-cp -r "$SCRIPT_DIR/venv/lib/python${PYTHON_VERSION%.*}/site-packages"/* "$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages/"
+# Packages are already installed directly to AppDir, so no need to copy from venv
 
 # Copy application files
 cp -r "$PROJECT_DIR/src" "$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages/"
@@ -391,9 +384,3 @@ export ARCH=x86_64
 "$SCRIPT_DIR/appimagetool-x86_64.AppImage" "$SCRIPT_DIR/AppDir" "vidmask-x86_64.AppImage"
 
 echo "AppImage created: vidmask-x86_64.AppImage"
-
-# Deactivate virtual environment
-deactivate
-
-# Clean up
-rm -rf "$SCRIPT_DIR/venv"
