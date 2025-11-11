@@ -33,35 +33,64 @@ if [ ! -d "$SCRIPT_DIR/Python-$PYTHON_VERSION" ]; then
     rm -f "Python-$PYTHON_VERSION.tgz"
 fi
 
-# After Python compilation and before virtual environment creation
+# After Python compilation, install packages directly to AppDir
 
-# Use the compiled Python - no need to copy or create symlinks since they're already set up
-PYTHON_EXEC="$SCRIPT_DIR/AppDir/usr/bin/python${PYTHON_VERSION%.*}"
-export LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH"
+echo "===== Starting post-Python-installation setup ====="
 
-# Create and activate virtual environment using the compiled Python
-rm -rf "$SCRIPT_DIR/venv"  # Clean up any existing venv
-"$PYTHON_EXEC" -m venv --clear "$SCRIPT_DIR/venv"
-source "$SCRIPT_DIR/venv/bin/activate"
+# Use the Python executable from the BUILD directory, not the installed one
+# This matches what Python's Makefile does for ensurepip
+PYTHON_BUILD_EXEC="$PROJECT_DIR/Python-$PYTHON_VERSION/python"
 
-# Verify we're using the correct Python version in the virtual environment
-VENV_PYTHON_VERSION=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-if [ "$VENV_PYTHON_VERSION" != "${PYTHON_VERSION%.*}" ]; then
-    echo "Error: Virtual environment Python version ($VENV_PYTHON_VERSION) doesn't match expected version ($PYTHON_VERSION)"
-    deactivate
-    rm -rf "$SCRIPT_DIR/venv"
+echo "Python build executable: $PYTHON_BUILD_EXEC"
+echo "Checking if Python build executable exists..."
+if [ ! -f "$PYTHON_BUILD_EXEC" ]; then
+    echo "ERROR: Python build executable not found at $PYTHON_BUILD_EXEC"
     exit 1
 fi
+echo "Python build executable found!"
+
+# Helper function to run Python from build directory
+# Only set LD_LIBRARY_PATH to Python source dir, NOT AppDir/usr/lib
+# This prevents library conflicts with system utilities
+run_python() {
+    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION" "$PYTHON_BUILD_EXEC" "$@"
+}
+
+echo "Python source directory: $PROJECT_DIR/Python-$PYTHON_VERSION"
+echo "Testing Python execution from build directory..."
+# Test if Python works
+if ! run_python --version; then
+    echo "ERROR: Python execution failed"
+    exit 1
+fi
+echo "Python execution test passed!"
+
+echo "Verifying Python version..."
+# Verify Python version
+PYTHON_VERSION_CHECK=$(run_python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+if [ "$PYTHON_VERSION_CHECK" != "${PYTHON_VERSION%.*}" ]; then
+    echo "Error: Python version ($PYTHON_VERSION_CHECK) doesn't match expected version (${PYTHON_VERSION%.*})"
+    exit 1
+fi
+echo "Python version check passed: $PYTHON_VERSION_CHECK"
+
+# Create site-packages directory if it doesn't exist
+echo "Creating site-packages directory..."
+mkdir -p "$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages"
 
 # Upgrade pip first
-"$SCRIPT_DIR/venv/bin/python" -m pip install --upgrade pip
+echo "Upgrading pip..."
+run_python -m pip install --upgrade pip
+echo "Pip upgrade complete!"
 
-# Install dependencies in virtual environment with specific versions
-"$SCRIPT_DIR/venv/bin/python" -m pip install \
+# Install dependencies directly to AppDir (avoiding venv segfault)
+echo "Installing dependencies to AppDir..."
+run_python -m pip install --target="$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages" \
     opencv-python-headless==4.8.1.78 \
     mediapipe==0.10.9 \
     numpy==1.24.3 \
     pillow==10.2.0
+echo "Dependencies installation complete!"
 
 # Create AppDir structure
 mkdir -p "$SCRIPT_DIR/AppDir/usr/bin"
@@ -69,32 +98,40 @@ mkdir -p "$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages"
 mkdir -p "$SCRIPT_DIR/AppDir/usr/share/applications"
 mkdir -p "$SCRIPT_DIR/AppDir/usr/share/icons/hicolor/256x256/apps"
 
-# Create AppRun script
-cat > "$SCRIPT_DIR/AppDir/AppRun" << EOF
+# First, create a separate directory for Python's shared library to avoid conflicts
+mkdir -p "$SCRIPT_DIR/AppDir/usr/lib/python-libs"
+cp -a "$SCRIPT_DIR/AppDir/usr/lib/libpython"*.so* "$SCRIPT_DIR/AppDir/usr/lib/python-libs/" || true
+
+# Create Python wrapper that sets library path only for Python
+cat > "$SCRIPT_DIR/AppDir/usr/bin/python-wrapper" << 'EOF'
 #!/bin/bash
-set -e
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+# Set LD_LIBRARY_PATH to Python libs directory only for this Python execution
+# This avoids conflicts with other libraries in usr/lib
+exec env LD_LIBRARY_PATH="$HERE/../lib/python-libs:$LD_LIBRARY_PATH" \
+    PYTHONHOME="$HERE/.." \
+    "$HERE/python3.11" "$@"
+EOF
 
-SELF=\$(readlink -f "\$0")
-HERE=\${SELF%/*}
+chmod +x "$SCRIPT_DIR/AppDir/usr/bin/python-wrapper"
 
-# Set environment variables
-export PATH="\$HERE/usr/bin:\$PATH"
-export LD_LIBRARY_PATH="\$HERE/usr/lib:\$LD_LIBRARY_PATH"
-export PYTHONHOME="\$HERE/usr"
-export PYTHONPATH="\$HERE/usr/lib/python${PYTHON_VERSION%.*}/site-packages:\$PYTHONPATH"
+# Create AppRun script - use absolute path to Python with controlled LD_LIBRARY_PATH
+cat > "$SCRIPT_DIR/AppDir/AppRun" << 'EOF'
+#!/bin/bash
 
-# Find the Python binary - try both python3 and specific version
-if [ -x "\$HERE/usr/bin/python3" ]; then
-    PYTHON_BIN="\$HERE/usr/bin/python3"
-elif [ -x "\$HERE/usr/bin/python${PYTHON_VERSION%.*}" ]; then
-    PYTHON_BIN="\$HERE/usr/bin/python${PYTHON_VERSION%.*}"
-else
-    echo "Error: Python binary not found"
-    exit 1
-fi
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
 
-# Execute the application
-exec "\$PYTHON_BIN" "\$HERE/usr/lib/python${PYTHON_VERSION%.*}/site-packages/src/main.py" "\$@"
+# Set environment variables (but NOT LD_LIBRARY_PATH globally)
+export PATH="$HERE/usr/bin:$PATH"
+export PYTHONHOME="$HERE/usr"
+export PYTHONPATH="$HERE/usr/lib/python3.11/site-packages:$PYTHONPATH"
+
+# Execute Python directly with LD_LIBRARY_PATH set only for this command
+# This prevents library pollution while allowing Python to find libpython3.11.so
+exec env LD_LIBRARY_PATH="$HERE/usr/lib/python-libs:$LD_LIBRARY_PATH" \
+    "$HERE/usr/bin/python3.11" "$HERE/usr/lib/python3.11/site-packages/src/main.py" "$@"
 EOF
 
 chmod +x "$SCRIPT_DIR/AppDir/AppRun"
@@ -109,8 +146,7 @@ done
 # Copy largest icon to AppDir root for AppImage builder
 cp "$SCRIPT_DIR/AppDir/usr/share/icons/hicolor/512x512/apps/vidmask.png" "$SCRIPT_DIR/AppDir/vidmask.png"
 
-# Copy virtual environment packages to AppDir
-cp -r "$SCRIPT_DIR/venv/lib/python${PYTHON_VERSION%.*}/site-packages"/* "$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages/"
+# Packages are already installed directly to AppDir, so no need to copy from venv
 
 # Copy application files
 cp -r "$PROJECT_DIR/src" "$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages/"
@@ -389,9 +425,3 @@ export ARCH=x86_64
 "$SCRIPT_DIR/appimagetool-x86_64.AppImage" "$SCRIPT_DIR/AppDir" "vidmask-x86_64.AppImage"
 
 echo "AppImage created: vidmask-x86_64.AppImage"
-
-# Deactivate virtual environment
-deactivate
-
-# Clean up
-rm -rf "$SCRIPT_DIR/venv"
