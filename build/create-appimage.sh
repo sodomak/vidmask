@@ -57,6 +57,17 @@ run_python() {
 
 echo "Python source directory: $PROJECT_DIR/Python-$PYTHON_VERSION"
 echo "AppDir lib directory: $SCRIPT_DIR/AppDir/usr/lib"
+
+echo "Checking if libpython was installed to AppDir..."
+if [ -f "$SCRIPT_DIR/AppDir/usr/lib/libpython3.11.so" ]; then
+    echo "✓ libpython3.11.so found in AppDir/usr/lib"
+    ls -lh "$SCRIPT_DIR/AppDir/usr/lib/libpython"*
+else
+    echo "✗ libpython3.11.so NOT found in AppDir/usr/lib - this is the problem!"
+    echo "Copying libpython from source directory..."
+    cp -v "$PROJECT_DIR/Python-$PYTHON_VERSION/libpython"* "$SCRIPT_DIR/AppDir/usr/lib/"
+fi
+
 echo "Testing Python execution..."
 # Test if Python works at all
 if ! run_python --version 2>&1; then
