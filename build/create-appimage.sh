@@ -35,33 +35,60 @@ fi
 
 # After Python compilation, install packages directly to AppDir
 
+echo "===== Starting post-Python-installation setup ====="
+
 # Use the compiled Python
 PYTHON_EXEC="$SCRIPT_DIR/AppDir/usr/bin/python${PYTHON_VERSION%.*}"
+
+echo "Python executable: $PYTHON_EXEC"
+echo "Checking if Python executable exists..."
+if [ ! -f "$PYTHON_EXEC" ]; then
+    echo "ERROR: Python executable not found at $PYTHON_EXEC"
+    exit 1
+fi
+echo "Python executable found!"
 
 # Helper function to run Python with correct library path
 run_python() {
     LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" "$PYTHON_EXEC" "$@"
 }
 
+echo "Testing Python execution..."
+# Test if Python works at all
+if ! run_python --version 2>&1; then
+    echo "ERROR: Python execution failed"
+    echo "Trying to get more info about the failure..."
+    LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" ldd "$PYTHON_EXEC" | grep "not found" || true
+    exit 1
+fi
+echo "Python execution test passed!"
+
+echo "Verifying Python version..."
 # Verify Python version
 PYTHON_VERSION_CHECK=$(run_python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 if [ "$PYTHON_VERSION_CHECK" != "${PYTHON_VERSION%.*}" ]; then
     echo "Error: Python version ($PYTHON_VERSION_CHECK) doesn't match expected version (${PYTHON_VERSION%.*})"
     exit 1
 fi
+echo "Python version check passed: $PYTHON_VERSION_CHECK"
 
 # Create site-packages directory if it doesn't exist
+echo "Creating site-packages directory..."
 mkdir -p "$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages"
 
 # Upgrade pip first
+echo "Upgrading pip..."
 run_python -m pip install --upgrade pip
+echo "Pip upgrade complete!"
 
 # Install dependencies directly to AppDir (avoiding venv segfault)
+echo "Installing dependencies to AppDir..."
 run_python -m pip install --target="$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages" \
     opencv-python-headless==4.8.1.78 \
     mediapipe==0.10.9 \
     numpy==1.24.3 \
     pillow==10.2.0
+echo "Dependencies installation complete!"
 
 # Create AppDir structure
 mkdir -p "$SCRIPT_DIR/AppDir/usr/bin"
