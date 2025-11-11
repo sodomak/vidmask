@@ -49,8 +49,9 @@ fi
 echo "Python executable found!"
 
 # Helper function to run Python with correct library path
+# Python needs to find libpython3.11.so which is in the build directory during setup
 run_python() {
-    LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" "$PYTHON_EXEC" "$@"
+    LD_LIBRARY_PATH="$SCRIPT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" "$PYTHON_EXEC" "$@"
 }
 
 echo "Testing Python execution..."
