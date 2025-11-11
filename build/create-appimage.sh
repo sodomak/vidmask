@@ -37,54 +37,30 @@ fi
 
 echo "===== Starting post-Python-installation setup ====="
 
-# Use the compiled Python
-PYTHON_EXEC="$SCRIPT_DIR/AppDir/usr/bin/python${PYTHON_VERSION%.*}"
+# Use the Python executable from the BUILD directory, not the installed one
+# This matches what Python's Makefile does for ensurepip
+PYTHON_BUILD_EXEC="$PROJECT_DIR/Python-$PYTHON_VERSION/python"
 
-echo "Python executable: $PYTHON_EXEC"
-echo "Checking if Python executable exists..."
-if [ ! -f "$PYTHON_EXEC" ]; then
-    echo "ERROR: Python executable not found at $PYTHON_EXEC"
+echo "Python build executable: $PYTHON_BUILD_EXEC"
+echo "Checking if Python build executable exists..."
+if [ ! -f "$PYTHON_BUILD_EXEC" ]; then
+    echo "ERROR: Python build executable not found at $PYTHON_BUILD_EXEC"
     exit 1
 fi
-echo "Python executable found!"
+echo "Python build executable found!"
 
-# Helper function to run Python with correct library path
-# Python needs to find libpython3.11.so which is in the Python source directory
-# The Python source is downloaded to the project root, not the build directory
+# Helper function to run Python from build directory
+# Only set LD_LIBRARY_PATH to Python source dir, NOT AppDir/usr/lib
+# This prevents library conflicts with system utilities
 run_python() {
-    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" "$PYTHON_EXEC" "$@"
+    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION" "$PYTHON_BUILD_EXEC" "$@"
 }
 
 echo "Python source directory: $PROJECT_DIR/Python-$PYTHON_VERSION"
-echo "AppDir lib directory: $SCRIPT_DIR/AppDir/usr/lib"
-
-echo "Checking if libpython was installed to AppDir..."
-if [ -f "$SCRIPT_DIR/AppDir/usr/lib/libpython3.11.so" ]; then
-    echo "✓ libpython3.11.so found in AppDir/usr/lib"
-    ls -lh "$SCRIPT_DIR/AppDir/usr/lib/libpython"*
-else
-    echo "✗ libpython3.11.so NOT found in AppDir/usr/lib - this is the problem!"
-    echo "Copying libpython from source directory..."
-    cp -v "$PROJECT_DIR/Python-$PYTHON_VERSION/libpython"* "$SCRIPT_DIR/AppDir/usr/lib/"
-fi
-
-echo "Testing Python execution..."
-# Test if Python works at all
-if ! run_python --version 2>&1; then
+echo "Testing Python execution from build directory..."
+# Test if Python works
+if ! run_python --version; then
     echo "ERROR: Python execution failed"
-    echo "Trying to get more info about the failure..."
-    echo ""
-    echo "=== Full ldd output for Python executable ==="
-    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" ldd "$PYTHON_EXEC"
-    echo ""
-    echo "=== Missing libraries (if any) ==="
-    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" ldd "$PYTHON_EXEC" | grep "not found" || echo "No missing libraries found"
-    echo ""
-    echo "=== Checking if libpython exists in Python source directory ==="
-    ls -la "$PROJECT_DIR/Python-$PYTHON_VERSION/libpython"* 2>&1 || echo "No libpython found"
-    echo ""
-    echo "=== Trying to run Python with strace (last 50 lines) ==="
-    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" strace -e trace=open,openat "$PYTHON_EXEC" --version 2>&1 | tail -50 || true
     exit 1
 fi
 echo "Python execution test passed!"
