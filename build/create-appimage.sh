@@ -49,17 +49,23 @@ fi
 echo "Python executable found!"
 
 # Helper function to run Python with correct library path
-# Python needs to find libpython3.11.so which is in the build directory during setup
+# Python needs to find libpython3.11.so which is in the Python source directory
+# The Python source is downloaded to the project root, not the build directory
 run_python() {
-    LD_LIBRARY_PATH="$SCRIPT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" "$PYTHON_EXEC" "$@"
+    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" "$PYTHON_EXEC" "$@"
 }
 
+echo "Python source directory: $PROJECT_DIR/Python-$PYTHON_VERSION"
+echo "AppDir lib directory: $SCRIPT_DIR/AppDir/usr/lib"
 echo "Testing Python execution..."
 # Test if Python works at all
 if ! run_python --version 2>&1; then
     echo "ERROR: Python execution failed"
     echo "Trying to get more info about the failure..."
-    LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" ldd "$PYTHON_EXEC" | grep "not found" || true
+    echo "Checking for missing libraries..."
+    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" ldd "$PYTHON_EXEC" | grep "not found" || true
+    echo "Checking if libpython exists in Python source directory..."
+    ls -la "$PROJECT_DIR/Python-$PYTHON_VERSION/libpython"* 2>&1 || echo "No libpython found"
     exit 1
 fi
 echo "Python execution test passed!"
