@@ -35,12 +35,14 @@ fi
 
 # After Python compilation and before virtual environment creation
 
+# Clean up any existing venv BEFORE setting LD_LIBRARY_PATH to avoid segfault
+rm -rf "$SCRIPT_DIR/venv"
+
 # Use the compiled Python - no need to copy or create symlinks since they're already set up
 PYTHON_EXEC="$SCRIPT_DIR/AppDir/usr/bin/python${PYTHON_VERSION%.*}"
 export LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH"
 
 # Create and activate virtual environment using the compiled Python
-rm -rf "$SCRIPT_DIR/venv"  # Clean up any existing venv
 "$PYTHON_EXEC" -m venv --clear "$SCRIPT_DIR/venv"
 source "$SCRIPT_DIR/venv/bin/activate"
 
