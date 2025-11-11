@@ -98,32 +98,38 @@ mkdir -p "$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages"
 mkdir -p "$SCRIPT_DIR/AppDir/usr/share/applications"
 mkdir -p "$SCRIPT_DIR/AppDir/usr/share/icons/hicolor/256x256/apps"
 
-# Create AppRun script
-cat > "$SCRIPT_DIR/AppDir/AppRun" << EOF
+# First, create a separate directory for Python's shared library to avoid conflicts
+mkdir -p "$SCRIPT_DIR/AppDir/usr/lib/python-libs"
+cp -a "$SCRIPT_DIR/AppDir/usr/lib/libpython"*.so* "$SCRIPT_DIR/AppDir/usr/lib/python-libs/" || true
+
+# Create Python wrapper that sets library path only for Python
+cat > "$SCRIPT_DIR/AppDir/usr/bin/python-wrapper" << 'EOF'
 #!/bin/bash
-set -e
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
+# Set LD_LIBRARY_PATH to Python libs directory only for this Python execution
+# This avoids conflicts with other libraries in usr/lib
+exec env LD_LIBRARY_PATH="$HERE/../lib/python-libs:$LD_LIBRARY_PATH" \
+    PYTHONHOME="$HERE/.." \
+    "$HERE/python3.11" "$@"
+EOF
 
-SELF=\$(readlink -f "\$0")
-HERE=\${SELF%/*}
+chmod +x "$SCRIPT_DIR/AppDir/usr/bin/python-wrapper"
 
-# Set environment variables
-export PATH="\$HERE/usr/bin:\$PATH"
-export LD_LIBRARY_PATH="\$HERE/usr/lib:\$LD_LIBRARY_PATH"
-export PYTHONHOME="\$HERE/usr"
-export PYTHONPATH="\$HERE/usr/lib/python${PYTHON_VERSION%.*}/site-packages:\$PYTHONPATH"
+# Create AppRun script that uses the wrapper
+cat > "$SCRIPT_DIR/AppDir/AppRun" << 'EOF'
+#!/bin/bash
 
-# Find the Python binary - try both python3 and specific version
-if [ -x "\$HERE/usr/bin/python3" ]; then
-    PYTHON_BIN="\$HERE/usr/bin/python3"
-elif [ -x "\$HERE/usr/bin/python${PYTHON_VERSION%.*}" ]; then
-    PYTHON_BIN="\$HERE/usr/bin/python${PYTHON_VERSION%.*}"
-else
-    echo "Error: Python binary not found"
-    exit 1
-fi
+SELF=$(readlink -f "$0")
+HERE=${SELF%/*}
 
-# Execute the application
-exec "\$PYTHON_BIN" "\$HERE/usr/lib/python${PYTHON_VERSION%.*}/site-packages/src/main.py" "\$@"
+# Set environment variables (but NOT LD_LIBRARY_PATH globally)
+export PATH="$HERE/usr/bin:$PATH"
+export PYTHONHOME="$HERE/usr"
+export PYTHONPATH="$HERE/usr/lib/python3.11/site-packages:$PYTHONPATH"
+
+# Use the Python wrapper which sets LD_LIBRARY_PATH only for Python
+exec "$HERE/usr/bin/python-wrapper" "$HERE/usr/lib/python3.11/site-packages/src/main.py" "$@"
 EOF
 
 chmod +x "$SCRIPT_DIR/AppDir/AppRun"
