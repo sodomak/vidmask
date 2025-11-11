@@ -62,10 +62,18 @@ echo "Testing Python execution..."
 if ! run_python --version 2>&1; then
     echo "ERROR: Python execution failed"
     echo "Trying to get more info about the failure..."
-    echo "Checking for missing libraries..."
-    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" ldd "$PYTHON_EXEC" | grep "not found" || true
-    echo "Checking if libpython exists in Python source directory..."
+    echo ""
+    echo "=== Full ldd output for Python executable ==="
+    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" ldd "$PYTHON_EXEC"
+    echo ""
+    echo "=== Missing libraries (if any) ==="
+    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" ldd "$PYTHON_EXEC" | grep "not found" || echo "No missing libraries found"
+    echo ""
+    echo "=== Checking if libpython exists in Python source directory ==="
     ls -la "$PROJECT_DIR/Python-$PYTHON_VERSION/libpython"* 2>&1 || echo "No libpython found"
+    echo ""
+    echo "=== Trying to run Python with strace (last 50 lines) ==="
+    LD_LIBRARY_PATH="$PROJECT_DIR/Python-$PYTHON_VERSION:$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" strace -e trace=open,openat "$PYTHON_EXEC" --version 2>&1 | tail -50 || true
     exit 1
 fi
 echo "Python execution test passed!"
