@@ -116,7 +116,7 @@ EOF
 
 chmod +x "$SCRIPT_DIR/AppDir/usr/bin/python-wrapper"
 
-# Create AppRun script that uses the wrapper
+# Create AppRun script - use absolute path to Python with controlled LD_LIBRARY_PATH
 cat > "$SCRIPT_DIR/AppDir/AppRun" << 'EOF'
 #!/bin/bash
 
@@ -128,8 +128,10 @@ export PATH="$HERE/usr/bin:$PATH"
 export PYTHONHOME="$HERE/usr"
 export PYTHONPATH="$HERE/usr/lib/python3.11/site-packages:$PYTHONPATH"
 
-# Use the Python wrapper which sets LD_LIBRARY_PATH only for Python
-exec "$HERE/usr/bin/python-wrapper" "$HERE/usr/lib/python3.11/site-packages/src/main.py" "$@"
+# Execute Python directly with LD_LIBRARY_PATH set only for this command
+# This prevents library pollution while allowing Python to find libpython3.11.so
+exec env LD_LIBRARY_PATH="$HERE/usr/lib/python-libs:$LD_LIBRARY_PATH" \
+    "$HERE/usr/bin/python3.11" "$HERE/usr/lib/python3.11/site-packages/src/main.py" "$@"
 EOF
 
 chmod +x "$SCRIPT_DIR/AppDir/AppRun"
