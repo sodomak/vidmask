@@ -37,10 +37,14 @@ fi
 
 # Use the compiled Python
 PYTHON_EXEC="$SCRIPT_DIR/AppDir/usr/bin/python${PYTHON_VERSION%.*}"
-export LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH"
+
+# Helper function to run Python with correct library path
+run_python() {
+    LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib:$LD_LIBRARY_PATH" "$PYTHON_EXEC" "$@"
+}
 
 # Verify Python version
-PYTHON_VERSION_CHECK=$("$PYTHON_EXEC" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+PYTHON_VERSION_CHECK=$(run_python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
 if [ "$PYTHON_VERSION_CHECK" != "${PYTHON_VERSION%.*}" ]; then
     echo "Error: Python version ($PYTHON_VERSION_CHECK) doesn't match expected version (${PYTHON_VERSION%.*})"
     exit 1
@@ -50,10 +54,10 @@ fi
 mkdir -p "$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages"
 
 # Upgrade pip first
-"$PYTHON_EXEC" -m pip install --upgrade pip
+run_python -m pip install --upgrade pip
 
 # Install dependencies directly to AppDir (avoiding venv segfault)
-"$PYTHON_EXEC" -m pip install --target="$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages" \
+run_python -m pip install --target="$SCRIPT_DIR/AppDir/usr/lib/python${PYTHON_VERSION%.*}/site-packages" \
     opencv-python-headless==4.8.1.78 \
     mediapipe==0.10.9 \
     numpy==1.24.3 \
