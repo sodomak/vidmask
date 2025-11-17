@@ -256,7 +256,7 @@ class SettingsFrame(ttk.LabelFrame):
         try:
             # Input devices (webcams)
             input_devices = []
-            for i in range(10):  # Check first 10 video devices
+            for i in range(20):  # Check first 20 video devices
                 device = f"/dev/video{i}"
                 if os.path.exists(device):
                     # Check if it's a capture device
@@ -265,10 +265,10 @@ class SettingsFrame(ttk.LabelFrame):
                         name = self.get_device_name(device)
                         input_devices.append(f"{name} ({device})")
                     cap.release()
-            
+
             # Output devices (v4l2loopback)
             output_devices = []
-            for i in range(10):  # Check first 10 video devices
+            for i in range(20):  # Check first 20 video devices
                 device = f"/dev/video{i}"
                 if os.path.exists(device):
                     # Check if it's a v4l2loopback device
@@ -276,24 +276,26 @@ class SettingsFrame(ttk.LabelFrame):
                         result = subprocess.run(
                             ['v4l2-ctl', '--device', device, '--all'],
                             capture_output=True,
-                            text=True
+                            text=True,
+                            timeout=2
                         )
-                        if 'v4l2loopback' in result.stdout:
+                        # Case-insensitive check for v4l2loopback
+                        if 'v4l2loopback' in result.stdout.lower():
                             name = self.get_device_name(device)
                             output_devices.append(f"{name} ({device})")
-                    except subprocess.CalledProcessError:
+                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                         continue
 
             # Update comboboxes
             self.input_combo['values'] = input_devices
             self.output_combo['values'] = output_devices
-            
+
             # Set defaults if no selection
             if not self.input_device.get() and input_devices:
                 self.input_device.set(input_devices[0])
             if not self.output_device.get() and output_devices:
                 self.output_device.set(output_devices[0])
-                
+
         except Exception as e:
             print(f"Error loading camera devices: {e}")
 

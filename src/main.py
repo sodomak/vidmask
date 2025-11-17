@@ -12,16 +12,15 @@ print("Starting application...")
 
 def main():
     root = tk.Tk()
-    
-    # Set simple window title
+
+    # Set window title
     root.title("VidMask")
-    
-    # Set window class using tk command
-    try:
-        root.tk.call('wm', 'class', '.', "VidMask")
-    except tk.TclError:
-        print("Could not set window class name")
-    
+
+    # Set WM_CLASS properly for proper identification in launchers
+    # WM_CLASS has two components: instance name and class name
+    # This ensures the app shows as "VidMask" instead of "Tk" in the dash
+    root.wm_class("VidMask")
+
     root.minsize(800, 600)
     
     # Create main window
