@@ -46,11 +46,34 @@ class MainWindow(ttk.Frame):
         # Configure root window
         self.root.minsize(800, 600)
         self.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Load camera devices
+
+        # Load camera devices with delayed retry for v4l2loopback initialization
         self.settings_frame.load_camera_devices()
-        
+
+        # Schedule a retry after 500ms to catch devices that weren't ready initially
+        self.root.after(500, self._retry_device_detection)
+
         print("GUI created")
+
+    def _retry_device_detection(self):
+        """Retry device detection after initial load to catch late-initializing devices"""
+        try:
+            # Save current selections
+            current_input = self.settings_frame.input_device.get()
+            current_output = self.settings_frame.output_device.get()
+
+            # Reload devices
+            self.settings_frame.load_camera_devices()
+
+            # Restore selections if they still exist
+            if current_input and current_input in self.settings_frame.input_combo['values']:
+                self.settings_frame.input_device.set(current_input)
+            if current_output and current_output in self.settings_frame.output_combo['values']:
+                self.settings_frame.output_device.set(current_output)
+
+            print("Device detection retry completed")
+        except Exception as e:
+            print(f"Error during device detection retry: {e}")
 
     def create_frames(self):
         """Create main application frames"""
