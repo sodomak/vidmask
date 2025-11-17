@@ -19,7 +19,11 @@ def main():
     # Set WM_CLASS properly for proper identification in launchers
     # WM_CLASS has two components: instance name and class name
     # This ensures the app shows as "VidMask" instead of "Tk" in the dash
-    root.wm_class("VidMask")
+    try:
+        # Use root._w (widget name) instead of '.' for proper window identification
+        root.tk.call('wm', 'class', root._w, 'VidMask')
+    except Exception as e:
+        print(f"Could not set window class: {e}")
 
     root.minsize(800, 600)
     
