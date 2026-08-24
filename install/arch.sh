@@ -24,12 +24,12 @@ echo "Installing dependencies..."
 sudo pacman -S --needed v4l2loopback-dkms fuse2
 
 echo "Loading v4l2loopback module..."
-sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="Virtual Camera" exclusive_caps=1
+sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="VidMask Cam" exclusive_caps=1
 
 if [ $MAKE_PERSISTENT -eq 1 ]; then
     echo "Making module load persistent..."
     echo "v4l2loopback" | sudo tee /etc/modules-load.d/v4l2loopback.conf
-    echo "options v4l2loopback devices=1 video_nr=2 card_label='Virtual Camera' exclusive_caps=1" | sudo tee /etc/modprobe.d/v4l2loopback.conf
+    echo 'options v4l2loopback devices=1 video_nr=2 card_label="VidMask Cam" exclusive_caps=1' | sudo tee /etc/modprobe.d/v4l2loopback.conf
 fi
 
 # Download latest release

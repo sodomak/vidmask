@@ -31,11 +31,11 @@ Download the latest AppImage from the [releases page](https://github.com/sodomak
    sudo pacman -S v4l2loopback-dkms
 
    # After installation, load the module:
-   sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="Virtual Camera" exclusive_caps=1
+   sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="VidMask Cam" exclusive_caps=1
 
    # Optional: Make module load persistent across reboots
    echo "v4l2loopback" | sudo tee /etc/modules-load.d/v4l2loopback.conf
-   echo "options v4l2loopback devices=1 video_nr=2 card_label='Virtual Camera' exclusive_caps=1" | sudo tee /etc/modprobe.d/v4l2loopback.conf
+   echo 'options v4l2loopback devices=1 video_nr=2 card_label="VidMask Cam" exclusive_caps=1' | sudo tee /etc/modprobe.d/v4l2loopback.conf
    ```
 4. Run it:
    ```bash
@@ -70,7 +70,7 @@ Download the latest AppImage from the [releases page](https://github.com/sodomak
    - Preview window toggle
 
 5. Click Start to begin
-6. Select "Virtual Camera" in your video conferencing software
+6. Select "VidMask Cam" in your video conferencing software
 
 ### Keyboard Shortcuts
 - Ctrl+S: Save settings
@@ -132,14 +132,14 @@ You can export/import settings through the File menu.
 1. Load v4l2loopback module:
 
    ```bash
-   sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="Virtual Camera" exclusive_caps=1
+   sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="VidMask Cam" exclusive_caps=1
    ```
 
 2. Make it persistent (optional):
 
    ```bash
    echo "v4l2loopback" | sudo tee /etc/modules-load.d/v4l2loopback.conf
-   echo "options v4l2loopback devices=1 video_nr=2 card_label='Virtual Camera' exclusive_caps=1" | sudo tee /etc/modprobe.d/v4l2loopback.conf
+   echo 'options v4l2loopback devices=1 video_nr=2 card_label="VidMask Cam" exclusive_caps=1' | sudo tee /etc/modprobe.d/v4l2loopback.conf
    ```
 
 ## Building from Source

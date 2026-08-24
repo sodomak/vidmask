@@ -28,11 +28,11 @@ case $OS in
 esac
 
 # Setup v4l2loopback
-sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="Virtual Camera" exclusive_caps=1
+sudo modprobe v4l2loopback devices=1 video_nr=2 card_label="VidMask Cam" exclusive_caps=1
 
-# Make v4l2loopback persistent
+# Make v4l2loopback persistent (double-quote card_label so spaces survive kernel param parsing)
 echo "v4l2loopback" | sudo tee /etc/modules-load.d/v4l2loopback.conf
-echo "options v4l2loopback devices=1 video_nr=2 card_label='Virtual Camera' exclusive_caps=1" | sudo tee /etc/modprobe.d/v4l2loopback.conf
+echo 'options v4l2loopback devices=1 video_nr=2 card_label="VidMask Cam" exclusive_caps=1' | sudo tee /etc/modprobe.d/v4l2loopback.conf
 
 # Add user to video group
 sudo usermod -a -G video $USER

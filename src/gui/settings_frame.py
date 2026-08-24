@@ -496,8 +496,9 @@ class SettingsFrame(ttk.LabelFrame):
                 try:
                     cmd = ["v4l2-ctl", "--device", device_path, "--all"]
                     output = subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode()
-                    if "v4l2loopback" in output.lower() or "Virtual Camera" in output:
-                        devices.append(f"Virtual Camera ({device_path})")
+                    if "v4l2loopback" in output.lower() or "VidMask Cam" in output or "Virtual Camera" in output:
+                        name = self.get_device_name(device_path)
+                        devices.append(f"{name} ({device_path})")
                     else:
                         # Skip non-v4l2loopback devices
                         continue
