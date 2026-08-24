@@ -117,6 +117,9 @@ EOF
 chmod +x "$SCRIPT_DIR/AppDir/usr/bin/python-wrapper"
 
 # Create AppRun script - use absolute path to Python with controlled LD_LIBRARY_PATH
+# ffmpeg/ffprobe/v4l2-ctl are wrappers that add usr/lib for those processes only.
+# Do NOT put usr/lib on Python's LD_LIBRARY_PATH: a bundled libc/libGL there
+# shadows the host and breaks after glibc or Mesa updates.
 cat > "$SCRIPT_DIR/AppDir/AppRun" << 'EOF'
 #!/bin/bash
 
@@ -323,57 +326,99 @@ copy_tcltk_libs() {
     echo "Successfully copied all Tcl/Tk files"
 }
 
-# Function to find and copy library with its dependencies
-copy_binary_and_deps() {
-    local binary="$1"
-    local target_dir="$2"
-    
-    # Find the binary using 'which'
-    local binary_path=$(which "$binary" 2>/dev/null)
-    if [ -z "$binary_path" ]; then
-        echo "Warning: $binary not found, skipping..."
-        return
-    fi
-    
-    echo "Copying binary: $binary_path"
-    # Copy the binary itself
-    cp -L "$binary_path" "$target_dir/"
-    
-    # Additional critical libraries to copy
-    local critical_libs=(
-        "libffi.so.7"
-        "libffi.so.8"  # Some systems might use version 8
-    )
+# Libraries that MUST come from the host OS (glibc, GPU, display server).
+# Bundling these causes "libavdevice.so.XX not found" after distro soname bumps
+# OR "GLIBC_X.YY not found" if an older libc shadows the host.
+is_host_lib() {
+    local base="$1"
+    case "$base" in
+        ld-linux*|linux-vdso.so*) return 0 ;;
+        libc.so*|libm.so*|libmvec.so*|libdl.so*|librt.so*|libpthread.so*|libutil.so*) return 0 ;;
+        libresolv.so*|libanl.so*|libnsl.so*|libcrypt.so*|libthread_db.so*|libBrokenLocale.so*|libcidn.so*|libnss_*) return 0 ;;
+        libstdc++.so*|libgcc_s.so*) return 0 ;;
+        libGL.so*|libGLdispatch.so*|libGLX.so*|libEGL.so*|libOpenGL.so*|libGLESv2.so*|libdrm.so*|libgbm.so*) return 0 ;;
+        libnvidia*|libcuda.so*|libcudart.so*) return 0 ;;
+        libwayland-*.so*|libX11.so*|libX11-xcb.so*|libXext.so*|libXfixes.so*|libXrender.so*|libXi.so*|libXrandr.so*|libXcursor.so*|libXdamage.so*|libXcomposite.so*|libXinerama.so*|libXxf86vm.so*|libXss.so*|libXau.so*|libXdmcp.so*|libxcb.so*|libxcb-*.so*|libxshmfence.so*|libXnvctrl.so*|libXv.so*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
-    # Copy critical libraries if they exist
-    for lib in "${critical_libs[@]}"; do
-        for lib_path in /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu; do
-            if [ -f "$lib_path/$lib" ]; then
-                echo "Copying critical library: $lib_path/$lib"
-                cp -L "$lib_path/$lib" "$SCRIPT_DIR/AppDir/usr/lib/"
-                break
-            fi
-        done
-    done
-    
-    # Get list of dependencies and copy them if not already present
-    echo "Copying dependencies for $binary_path"
-    ldd "$binary_path" | grep "=> /" | awk '{print $3}' | while read lib; do
-        # Skip system libraries except for critical ones
-        if echo "$lib" | grep -q "^/lib\|^/usr/lib/\(lib\(c\|gcc\|dl\|rt\|pthread\|stdc++\|m\|util\|selinux\|krb5\|gssapi\)\.so\)"; then
-            # Check if it's a critical library before skipping
-            local base_lib=$(basename "$lib")
-            if echo "${critical_libs[@]}" | grep -q "$base_lib"; then
-                echo "Including critical library: $lib"
-            else
-                echo "Skipping system library: $lib"
-                continue
-            fi
+copy_recursive_deps() {
+    local src="$1"
+    local libdir="$2"
+    local seen_file="$3"
+
+    [ -f "$src" ] || return 0
+
+    local lib base dest
+    # Do not pipe to while: that runs in a subshell and drops copies/recursion.
+    while IFS= read -r lib; do
+        [ -f "$lib" ] || continue
+        base=$(basename "$lib")
+        if is_host_lib "$base"; then
+            echo "Skipping host library: $lib"
+            continue
         fi
-        
-        if [ ! -f "$SCRIPT_DIR/AppDir/usr/lib/$(basename "$lib")" ]; then
-            echo "Copying dependency: $lib"
-            cp -L "$lib" "$SCRIPT_DIR/AppDir/usr/lib/"
+        if grep -qxF "$base" "$seen_file" 2>/dev/null; then
+            continue
+        fi
+        echo "$base" >> "$seen_file"
+        dest="$libdir/$base"
+        echo "Copying dependency: $lib"
+        cp -L "$lib" "$dest"
+        chmod u+w "$dest" 2>/dev/null || true
+        copy_recursive_deps "$dest" "$libdir" "$seen_file"
+    done < <(ldd "$src" 2>/dev/null | awk '/=> \// {print $3} /^\t\// {print $1}')
+}
+
+install_bundled_binary() {
+    local requested="$1"
+    local bindir="$2"
+    local src_path=""
+
+    if [ -f "$requested" ]; then
+        src_path="$requested"
+    else
+        src_path=$(command -v "$requested" 2>/dev/null || true)
+    fi
+    if [ -z "$src_path" ] || [ ! -f "$src_path" ]; then
+        echo "Warning: binary not found, skipping: $requested"
+        return 0
+    fi
+
+    local name
+    name=$(basename "$src_path")
+    echo "Bundling binary: $src_path as ${name}.bin"
+    mkdir -p "$bindir" "$SCRIPT_DIR/AppDir/usr/lib"
+    cp -L "$src_path" "$bindir/${name}.bin"
+    chmod u+wx "$bindir/${name}.bin"
+
+    local seen
+    seen=$(mktemp)
+    copy_recursive_deps "$bindir/${name}.bin" "$SCRIPT_DIR/AppDir/usr/lib" "$seen"
+    rm -f "$seen"
+
+    # Wrapper so the bundled binary finds bundled libs without putting usr/lib
+    # on Python's LD_LIBRARY_PATH (and without depending on host sonames).
+    cat > "$bindir/$name" << EOF
+#!/bin/bash
+HERE="\$(cd "\$(dirname "\$(readlink -f "\$0")")" && pwd)"
+exec env LD_LIBRARY_PATH="\$HERE/../lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}" "\$HERE/${name}.bin" "\$@"
+EOF
+    chmod +x "$bindir/$name"
+}
+
+purge_host_libs() {
+    local libdir="$1"
+    echo "Removing bundled host libraries from $libdir"
+    local f base
+    shopt -s nullglob
+    for f in "$libdir"/*.so* "$libdir"/ld-linux*; do
+        [ -e "$f" ] || continue
+        base=$(basename "$f")
+        if is_host_lib "$base"; then
+            echo "Purging host library: $base"
+            rm -f "$f"
         fi
     done
 }
@@ -401,6 +446,31 @@ verify_dependencies() {
         missing_deps=1
     fi
 
+    # Bundled ffmpeg must start using AppDir libs, not host libavdevice
+    local ffmpeg_wrap="$SCRIPT_DIR/AppDir/usr/bin/ffmpeg"
+    local ffmpeg_bin="$SCRIPT_DIR/AppDir/usr/bin/ffmpeg.bin"
+    if [ ! -x "$ffmpeg_wrap" ] || [ ! -f "$ffmpeg_bin" ]; then
+        echo "Error: bundled ffmpeg wrapper/binary missing"
+        missing_deps=1
+    elif ! "$ffmpeg_wrap" -hide_banner -version >/dev/null; then
+        echo "Error: bundled ffmpeg failed to start"
+        LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib" ldd "$ffmpeg_bin" || true
+        missing_deps=1
+    else
+        local unresolved
+        unresolved=$(LD_LIBRARY_PATH="$SCRIPT_DIR/AppDir/usr/lib" ldd "$ffmpeg_bin" 2>&1 | grep 'not found' || true)
+        if [ -n "$unresolved" ]; then
+            echo "Error: bundled ffmpeg has unresolved libraries:"
+            echo "$unresolved"
+            missing_deps=1
+        fi
+    fi
+
+    if [ -e "$SCRIPT_DIR/AppDir/usr/lib/libc.so.6" ]; then
+        echo "Error: libc.so.6 must not be bundled (causes GLIBC version conflicts)"
+        missing_deps=1
+    fi
+
     if [ $missing_deps -eq 1 ]; then
         echo "Critical dependencies are missing. Aborting."
         exit 1
@@ -409,10 +479,22 @@ verify_dependencies() {
     echo "All critical dependencies verified."
 }
 
-# Copy binaries and their dependencies
-copy_binary_and_deps "$(which v4l2-ctl)" "$SCRIPT_DIR/AppDir/usr/bin"
-copy_binary_and_deps "$(which ffmpeg)" "$SCRIPT_DIR/AppDir/usr/bin"
-copy_binary_and_deps "$(which ffprobe)" "$SCRIPT_DIR/AppDir/usr/bin"
+# Copy binaries and their recursive non-host dependencies, then wrap them so
+# they use AppDir/usr/lib at runtime (survives host ffmpeg soname updates).
+install_bundled_binary "$(command -v v4l2-ctl)" "$SCRIPT_DIR/AppDir/usr/bin"
+install_bundled_binary "$(command -v ffmpeg)" "$SCRIPT_DIR/AppDir/usr/bin"
+install_bundled_binary "$(command -v ffprobe)" "$SCRIPT_DIR/AppDir/usr/bin"
+purge_host_libs "$SCRIPT_DIR/AppDir/usr/lib"
+
+# Python needs libffi; ffmpeg may not pull it in. Keep both SONAMEs when present.
+for lib in libffi.so.7 libffi.so.8; do
+    for lib_path in /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu; do
+        if [ -f "$lib_path/$lib" ]; then
+            echo "Copying $lib_path/$lib"
+            cp -L "$lib_path/$lib" "$SCRIPT_DIR/AppDir/usr/lib/"
+        fi
+    done
+done
 
 # Copy Tcl/Tk libraries
 copy_tcltk_libs
